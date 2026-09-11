@@ -1,0 +1,12 @@
+{
+  "name": "roar-filler",
+  "version": "1.0.0",
+  "description": "This is an extension created by Jhon Romero for filling rOar hours automatically",
+  "license": "ISC",
+  "author": "Jhon Romero",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
