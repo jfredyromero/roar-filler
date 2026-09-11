@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "rOar Filler",
     "version": "1.0.0",
-    "description": "Llena automáticamente 8 horas diarias en el timesheet de rOar.",
+    "description": "Automatically fills 8 daily hours in the rOar timesheet.",
     "permissions": ["scripting", "activeTab", "tabs"],
     "host_permissions": [
       "https://roar.marcel.ai/*",

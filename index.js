@@ -1,7 +1,7 @@
-// ===== Esta función se inyecta y se ejecuta DENTRO de la página del timesheet =====
+// ===== This function is injected and runs INSIDE the timesheet page =====
 async function autofillTimesheet(dryRun) {
     const logs = [];
-    const log = (msg, tipo = '') => { logs.push({ msg, tipo }); console.log(msg); };
+    const log = (msg, type = '') => { logs.push({ msg, type }); console.log(msg); };
 
     const API = 'https://roar-api.marcel.ai/api/timesheet/api/timesheet/save';
     const EMPLOYEE = '10097729';
@@ -14,7 +14,7 @@ async function autofillTimesheet(dryRun) {
       ppmTaskId: '69e794f200008e0f7a14964ac91f753e',
       ppmTaskName: 'Digitas AI: Platform 2026',
     };
-    const JOB_FESTIVO = {
+    const JOB_HOLIDAY = {
       jobId: 'H7131-000142-04',
       workCode: 'L01717',
       billableIndicator: 'N',
@@ -23,134 +23,134 @@ async function autofillTimesheet(dryRun) {
       ppmTaskName: 'Holiday - US8501 - Digitas Agencies',
     };
     const ENTRIES_NORMAL = [
-      { horas: 1, grupoId: '66', grupo: 'Cross Capability - General', tareaId: '66D', tarea: 'Project Meeting' },
-      { horas: 7, grupoId: '58', grupo: 'Tech - Engineering',         tareaId: '58A', tarea: 'Development & Engineering Collaboration' },
+      { hours: 1, groupId: '66', group: 'Cross Capability - General', taskId: '66D', taskName: 'Project Meeting' },
+      { hours: 7, groupId: '58', group: 'Tech - Engineering',         taskId: '58A', taskName: 'Development & Engineering Collaboration' },
     ];
-    const ENTRIES_FESTIVO = [
-      { horas: 8, grupoId: '67', grupo: 'Cross Capability - Offtime', tareaId: '67A', tarea: 'Offtime' },
+    const ENTRIES_HOLIDAY = [
+      { hours: 8, groupId: '67', group: 'Cross Capability - Offtime', taskId: '67A', taskName: 'Offtime' },
     ];
 
-    const pausa = ms => new Promise(r => setTimeout(r, ms));
+    const pause = ms => new Promise(r => setTimeout(r, ms));
 
-    // ---- Semana leída del DOM ----
-    const filaPorCodigo = codigo => {
+    // ---- Week read from the DOM ----
+    const rowByCode = code => {
       const span = [...document.querySelectorAll('main .grid-row span')]
-        .find(s => s.textContent.trim() === codigo);
-      if (!span) throw new Error('No encontré la fila del código ' + codigo);
+        .find(s => s.textContent.trim() === code);
+      if (!span) throw new Error('Could not find the row for code ' + code);
       return span.closest('.grid-row');
     };
 
-    // El userJobId es propio de cada semana (rOar crea una asignación nueva cada vez
-    // que agregás el job), así que hay que leerlo en vivo desde las props de React
-    // en vez de hardcodearlo — si no, el guardado falla con "Timesheet week should
-    // be same with the jobs week".
-    const userJobIdDeFila = fila => {
-      const key = Object.keys(fila).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
-      let nodo = key ? fila[key] : null;
-      for (let i = 0; nodo && i < 25; i++, nodo = nodo.return) {
-        if (nodo.memoizedProps?.timesheetJob?.id) return nodo.memoizedProps.timesheetJob.id;
+    // userJobId is specific to each week (rOar creates a new assignment every time
+    // you add the job), so it needs to be read live from React props instead of
+    // hardcoding it — otherwise saving fails with "Timesheet week should be same
+    // with the jobs week".
+    const userJobIdFromRow = row => {
+      const key = Object.keys(row).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+      let node = key ? row[key] : null;
+      for (let i = 0; node && i < 25; i++, node = node.return) {
+        if (node.memoizedProps?.timesheetJob?.id) return node.memoizedProps.timesheetJob.id;
       }
       return null;
     };
 
-    let DIAS;
+    let DAYS;
     try {
-      const filaNormal = filaPorCodigo(JOB_NORMAL.jobId);
-      JOB_NORMAL.userJobId = userJobIdDeFila(filaNormal);
+      const normalRow = rowByCode(JOB_NORMAL.jobId);
+      JOB_NORMAL.userJobId = userJobIdFromRow(normalRow);
       if (!JOB_NORMAL.userJobId) {
-        throw new Error('No pude leer el userJobId de esta semana desde React (¿cambió la estructura de rOar?)');
+        throw new Error('Could not read this week\'s userJobId from React (did rOar\'s structure change?)');
       }
 
-      const inputsNormal = [...filaNormal.querySelectorAll('input[type="text"]')]
+      const normalInputs = [...normalRow.querySelectorAll('input[type="text"]')]
         .filter(i => /^\d{4}-\d{2}-\d{2}-/.test(i.id));
-      const celdasDias = [...document.querySelectorAll('nav .grid-row .grid-row__cell')].slice(1, 8);
+      const dayCells = [...document.querySelectorAll('nav .grid-row .grid-row__cell')].slice(1, 8);
 
-      // El job Festivo solo hace falta esa semana si hay algún día feriado real —
-      // si no, el usuario nunca lo agrega y no hay que exigir esa fila.
-      const hayFestivo = celdasDias.some(c => /Public Holiday/i.test(c?.textContent || ''));
-      let filaFestivo = null;
-      if (hayFestivo) {
-        filaFestivo = filaPorCodigo(JOB_FESTIVO.jobId);
-        JOB_FESTIVO.userJobId = userJobIdDeFila(filaFestivo);
-        if (!JOB_FESTIVO.userJobId) {
-          throw new Error('No pude leer el userJobId del job Festivo desde React (¿cambió la estructura de rOar?)');
+      // The Holiday job is only needed that week if there's an actual holiday —
+      // otherwise the user never adds it and this shouldn't require that row.
+      const hasHoliday = dayCells.some(c => /Public Holiday/i.test(c?.textContent || ''));
+      let holidayRow = null;
+      if (hasHoliday) {
+        holidayRow = rowByCode(JOB_HOLIDAY.jobId);
+        JOB_HOLIDAY.userJobId = userJobIdFromRow(holidayRow);
+        if (!JOB_HOLIDAY.userJobId) {
+          throw new Error('Could not read the Holiday job\'s userJobId from React (did rOar\'s structure change?)');
         }
       }
 
-      DIAS = inputsNormal.map((input, i) => {
-        const fecha = input.id.slice(0, 10);
-        const inputFestivo = filaFestivo?.querySelector(`input[id^="${fecha}-"]`);
+      DAYS = normalInputs.map((input, i) => {
+        const date = input.id.slice(0, 10);
+        const holidayInput = holidayRow?.querySelector(`input[id^="${date}-"]`);
         return {
-          fecha,
+          date,
           dayIndex: i,
-          festivo: /Public Holiday/i.test(celdasDias[i]?.textContent || ''),
-          habilitado: !input.disabled,
-          horasActuales: (parseFloat(input.value) || 0) + (parseFloat(inputFestivo?.value) || 0),
+          holiday: /Public Holiday/i.test(dayCells[i]?.textContent || ''),
+          enabled: !input.disabled,
+          currentHours: (parseFloat(input.value) || 0) + (parseFloat(holidayInput?.value) || 0),
         };
       });
     } catch (e) {
-      log('⚠️ ' + e.message + ' — ¿estás en el timesheet con el job correspondiente agregado?', 'err');
-      return { logs, errores: 1 };
+      log('⚠️ ' + e.message + ' — are you on the timesheet with the corresponding job added?', 'err');
+      return { logs, errors: 1 };
     }
 
-    log('Semana detectada:');
-    DIAS.forEach(d => log(
-      `  ${d.fecha}${d.festivo ? ' [festivo]' : ''}${!d.habilitado ? ' [fin de semana]' : ''} → ${d.horasActuales}h`,
+    log('Detected week:');
+    DAYS.forEach(d => log(
+      `  ${d.date}${d.holiday ? ' [holiday]' : ''}${!d.enabled ? ' [weekend]' : ''} → ${d.currentHours}h`,
       'skip'
     ));
 
-    // ---- Token desde el cache de MSAL ----
-    const obtenerToken = () => {
-      const ahora = Math.floor(Date.now() / 1000);
-      const candidatos = [];
+    // ---- Token from MSAL cache ----
+    const getToken = () => {
+      const now = Math.floor(Date.now() / 1000);
+      const candidates = [];
       for (const storage of [localStorage, sessionStorage]) {
         for (let i = 0; i < storage.length; i++) {
           const key = storage.key(i);
           if (!/accesstoken/i.test(key)) continue;
           try {
             const val = JSON.parse(storage.getItem(key));
-            if (val && val.credentialType === 'AccessToken' && val.secret) candidatos.push(val);
+            if (val && val.credentialType === 'AccessToken' && val.secret) candidates.push(val);
           } catch (_) {}
         }
       }
-      const validos = candidatos
+      const validTokens = candidates
         .filter(t => (t.target || '').includes('timesheet_api_access'))
-        .filter(t => !t.expiresOn || parseInt(t.expiresOn, 10) > ahora + 60)
+        .filter(t => !t.expiresOn || parseInt(t.expiresOn, 10) > now + 60)
         .sort((a, b) => parseInt(b.expiresOn || 0, 10) - parseInt(a.expiresOn || 0, 10));
-      return validos.length ? validos[0].secret : null;
+      return validTokens.length ? validTokens[0].secret : null;
     };
 
-    const TOKEN = obtenerToken();
+    const TOKEN = getToken();
     if (!TOKEN) {
-      log('⚠️ No hay token vigente. Recarga la página y vuelve a intentar.', 'err');
-      return { logs, errores: 1 };
+      log('⚠️ No valid token found. Reload the page and try again.', 'err');
+      return { logs, errors: 1 };
     }
-    log('🔑 Token obtenido del cache de MSAL.', 'ok');
+    log('🔑 Token obtained from MSAL cache.', 'ok');
 
     if (dryRun) {
-      log('— Vista previa: no se guardó nada. —', 'warn');
-      DIAS.filter(d => d.habilitado).forEach(d => {
-        if (d.horasActuales >= 8) { log(`↷ ${d.fecha} se saltaría (${d.horasActuales}h)`, 'skip'); return; }
-        if (d.horasActuales > 0)  { log(`⚠️ ${d.fecha} parcial (${d.horasActuales}h): se saltaría`, 'warn'); return; }
-        const es = d.festivo ? ENTRIES_FESTIVO : ENTRIES_NORMAL;
-        es.forEach(e => log(`→ ${d.fecha}: ${e.horas}h | ${e.grupo} | ${e.tarea}`));
+      log('— Preview: nothing was saved. —', 'warn');
+      DAYS.filter(d => d.enabled).forEach(d => {
+        if (d.currentHours >= 8) { log(`↷ ${d.date} would be skipped (${d.currentHours}h)`, 'skip'); return; }
+        if (d.currentHours > 0)  { log(`⚠️ ${d.date} partial (${d.currentHours}h): would be skipped`, 'warn'); return; }
+        const entries = d.holiday ? ENTRIES_HOLIDAY : ENTRIES_NORMAL;
+        entries.forEach(e => log(`→ ${d.date}: ${e.hours}h | ${e.group} | ${e.taskName}`));
       });
-      return { logs, errores: 0 };
+      return { logs, errors: 0 };
     }
 
-    // ---- Guardado ----
-    const guardarEntry = async (dia, job, entry) => {
+    // ---- Saving ----
+    const saveEntry = async (day, job, entry) => {
       const body = {
         jobId: job.jobId, userJobId: job.userJobId, comment: '',
-        billableIndicator: job.billableIndicator, dayIndex: dia.dayIndex,
-        durationValue: entry.horas, employeeCode: EMPLOYEE, workCode: job.workCode,
-        reportedDate: dia.fecha, culture: 'en-us', countryCode: '', location: '',
+        billableIndicator: job.billableIndicator, dayIndex: day.dayIndex,
+        durationValue: entry.hours, employeeCode: EMPLOYEE, workCode: job.workCode,
+        reportedDate: day.date, culture: 'en-us', countryCode: '', location: '',
         locationCode: '', id: '', task: job.task, percentageEntry: false,
         ppmTaskId: job.ppmTaskId, ppmTaskName: job.ppmTaskName,
         durationPercentageValue: 0, activity: '', lineManagerCode: null,
         purposeOfOffsiteRTOCompliance: null,
-        operationalTaskGroupId: entry.grupoId, operationalTaskGroupName: entry.grupo,
-        operationalTaskId: entry.tareaId, operationalTaskName: entry.tarea,
+        operationalTaskGroupId: entry.groupId, operationalTaskGroupName: entry.group,
+        operationalTaskId: entry.taskId, operationalTaskName: entry.taskName,
       };
       const res = await fetch(API, {
         method: 'POST',
@@ -168,63 +168,63 @@ async function autofillTimesheet(dryRun) {
       return { ok: res.ok, status: res.status, data };
     };
 
-    let errores = 0;
-    for (const dia of DIAS) {
-      if (!dia.habilitado) continue;
-      if (dia.horasActuales >= 8) { log(`↷ ${dia.fecha} ya tiene ${dia.horasActuales}h`, 'skip'); continue; }
-      if (dia.horasActuales > 0) {
-        log(`⚠️ ${dia.fecha} tiene ${dia.horasActuales}h (parcial): lo salto para no duplicar`, 'warn');
+    let errors = 0;
+    for (const day of DAYS) {
+      if (!day.enabled) continue;
+      if (day.currentHours >= 8) { log(`↷ ${day.date} already has ${day.currentHours}h`, 'skip'); continue; }
+      if (day.currentHours > 0) {
+        log(`⚠️ ${day.date} has ${day.currentHours}h (partial): skipping to avoid duplicating`, 'warn');
         continue;
       }
 
-      const job     = dia.festivo ? JOB_FESTIVO     : JOB_NORMAL;
-      const entries = dia.festivo ? ENTRIES_FESTIVO : ENTRIES_NORMAL;
+      const job     = day.holiday ? JOB_HOLIDAY     : JOB_NORMAL;
+      const entries = day.holiday ? ENTRIES_HOLIDAY : ENTRIES_NORMAL;
 
       for (const entry of entries) {
         try {
-          const r = await guardarEntry(dia, job, entry);
+          const r = await saveEntry(day, job, entry);
           if (r.ok) {
-            log(`✔ ${dia.fecha} → ${entry.horas}h | ${entry.grupo}`, 'ok');
+            log(`✔ ${day.date} → ${entry.hours}h | ${entry.group}`, 'ok');
           } else {
-            errores++;
-            log(`✖ ${dia.fecha} → HTTP ${r.status} ${JSON.stringify(r.data || {})}`, 'err');
-            if (r.status === 401) { log('Token expirado. Recarga la página.', 'err'); return { logs, errores }; }
+            errors++;
+            log(`✖ ${day.date} → HTTP ${r.status} ${JSON.stringify(r.data || {})}`, 'err');
+            if (r.status === 401) { log('Token expired. Reload the page.', 'err'); return { logs, errors }; }
           }
         } catch (err) {
-          errores++;
-          log(`✖ ${dia.fecha} → error de red: ${err.message}`, 'err');
+          errors++;
+          log(`✖ ${day.date} → network error: ${err.message}`, 'err');
         }
-        await pausa(600);
+        await pause(600);
       }
     }
 
-    log(errores === 0
-      ? '✔ Listo. Recarga la página y verifica antes de enviar.'
-      : `⚠ Terminado con ${errores} error(es).`, errores === 0 ? 'ok' : 'warn');
-    return { logs, errores };
+    log(errors === 0
+      ? '✔ Done. Reload the page and verify before submitting.'
+      : `⚠ Finished with ${errors} error(s).`, errors === 0 ? 'ok' : 'warn');
+    return { logs, errors };
   }
 
-  // ===== UI del popup =====
+  // ===== Popup UI =====
   const $log = document.getElementById('log');
-  const pintar = entradas => {
+  const render = entries => {
     $log.innerHTML = '';
-    entradas.forEach(({ msg, tipo }) => {
+    entries.forEach(({ msg, type }) => {
       const div = document.createElement('div');
       div.textContent = msg;
-      if (tipo) div.className = tipo;
+      if (type) div.className = type;
       $log.appendChild(div);
     });
     $log.scrollTop = $log.scrollHeight;
   };
 
-  const ejecutar = async dryRun => {
+  const run = async dryRun => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.url?.includes('roar.marcel.ai')) {
-      pintar([{ msg: 'Abre primero la página del timesheet (roar.marcel.ai).', tipo: 'err' }]);
+      render([{ msg: 'Open the timesheet page first (roar.marcel.ai).', type: 'err' }]);
       return;
     }
     document.querySelectorAll('button').forEach(b => b.disabled = true);
-    pintar([{ msg: dryRun ? 'Analizando semana…' : 'Guardando entries…', tipo: 'warn' }]);
+    render([{ msg: dryRun ? 'Analyzing week…' : 'Saving entries…', type: 'warn' }]);
     try {
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
@@ -232,22 +232,22 @@ async function autofillTimesheet(dryRun) {
         func: autofillTimesheet,
         args: [dryRun],
       });
-      const resultados = results.map(r => r.result).filter(Boolean);
-      const mejor = resultados.find(r => r.logs.some(l => l.msg.includes('Semana detectada')));
-      const todos = mejor ? mejor.logs : resultados.flatMap((r, i) => [
-        { msg: `--- frame ${i} ---`, tipo: 'warn' },
+      const allResults = results.map(r => r.result).filter(Boolean);
+      const best = allResults.find(r => r.logs.some(l => l.msg.includes('Detected week')));
+      const all = best ? best.logs : allResults.flatMap((r, i) => [
+        { msg: `--- frame ${i} ---`, type: 'warn' },
         ...r.logs,
       ]);
-      pintar(todos);
+      render(all);
     } catch (e) {
-      pintar([{ msg: 'Error al inyectar el script: ' + e.message, tipo: 'err' }]);
+      render([{ msg: 'Error injecting script: ' + e.message, type: 'err' }]);
     } finally {
       document.querySelectorAll('button').forEach(b => b.disabled = false);
     }
   };
 
-  document.getElementById('preview').addEventListener('click', () => ejecutar(true));
-  document.getElementById('run').addEventListener('click', () => ejecutar(false));
+  document.getElementById('preview').addEventListener('click', () => run(true));
+  document.getElementById('run').addEventListener('click', () => run(false));
   document.getElementById('reload').addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     chrome.tabs.reload(tab.id);
