@@ -8,6 +8,7 @@ A Chrome extension that automatically fills daily hours in the [rOar](https://ro
 - Reuses the active session's auth token from the MSAL cache — no separate login step.
 - Fills each enabled weekday with a fixed set of entries:
   - **Regular days:** 1h Project Meeting + 7h Development & Engineering Collaboration.
+  - **Meeting-heavy days** (picked in the popup): 2h Project Meeting + 6h Development & Engineering Collaboration.
   - **Holidays** (days marked "Public Holiday" on the timesheet): 8h Offtime, using a separate Holiday job row.
 - Skips days that already have 8+ hours, and warns (without touching them) on days with a partial entry, so it never duplicates hours.
 - Offers a **Preview** mode that shows exactly what would be submitted, without saving anything.
@@ -22,10 +23,11 @@ A Chrome extension that automatically fills daily hours in the [rOar](https://ro
 ## Usage
 
 1. Open your timesheet at `roar.marcel.ai` and make sure the correct job(s) are already added for the week (the regular job, and the Holiday job only on weeks that actually have a holiday).
-2. Click the extension icon.
-3. **Preview** — shows the detected week and what would be filled, without saving.
-4. **Fill week** — submits the entries to rOar.
-5. **Reload page** — reloads the timesheet tab, useful after filling to verify the result before submitting for approval.
+2. Click the extension icon. It detects the week and shows a chip per weekday.
+3. Tap the days that had **2h of meetings** (holidays and days already filled are disabled). The selection is remembered per week while the browser stays open, so closing the popup doesn't lose it.
+4. **Preview** — shows the detected week and what would be filled, without saving.
+5. **Fill week** — submits the entries to rOar.
+6. **Reload page** — reloads the timesheet tab, useful after filling to verify the result before submitting for approval.
 
 ## Configuration
 

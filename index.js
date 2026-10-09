@@ -1,5 +1,7 @@
 // ===== This function is injected and runs INSIDE the timesheet page =====
-async function autofillTimesheet(dryRun) {
+// mode: 'detect' (only read the week) | 'preview' (dry run) | 'run' (save).
+// meetingDates: YYYY-MM-DD days that get 2h of meetings instead of 1h.
+async function autofillTimesheet(mode, meetingDates = []) {
     const logs = [];
     const log = (msg, type = '') => { logs.push({ msg, type }); console.log(msg); };
 
@@ -26,9 +28,16 @@ async function autofillTimesheet(dryRun) {
       { hours: 1, groupId: '66', group: 'Cross Capability - General', taskId: '66D', taskName: 'Project Meeting' },
       { hours: 7, groupId: '58', group: 'Tech - Engineering',         taskId: '58A', taskName: 'Development & Engineering Collaboration' },
     ];
+    const ENTRIES_MEETING = [
+      { ...ENTRIES_NORMAL[0], hours: 2 },
+      { ...ENTRIES_NORMAL[1], hours: 6 },
+    ];
     const ENTRIES_HOLIDAY = [
       { hours: 8, groupId: '67', group: 'Cross Capability - Offtime', taskId: '67A', taskName: 'Offtime' },
     ];
+    const entriesFor = day => day.holiday ? ENTRIES_HOLIDAY
+      : meetingDates.includes(day.date) ? ENTRIES_MEETING
+      : ENTRIES_NORMAL;
 
     const pause = ms => new Promise(r => setTimeout(r, ms));
 
@@ -97,9 +106,14 @@ async function autofillTimesheet(dryRun) {
       return { logs, errors: 1 };
     }
 
+    // `days` marks the frame that actually holds the grid (the popup picks it by this)
+    const result = errors => ({ logs, errors, days: DAYS });
+    if (mode === 'detect') return result(0);
+
     log('Detected week:');
     DAYS.forEach(d => log(
-      `  ${d.date}${d.holiday ? ' [holiday]' : ''}${!d.enabled ? ' [weekend]' : ''} → ${d.currentHours}h`,
+      `  ${d.date}${d.holiday ? ' [holiday]' : ''}${!d.enabled ? ' [weekend]' : ''}`
+        + `${!d.holiday && meetingDates.includes(d.date) ? ' [2h meeting]' : ''} → ${d.currentHours}h`,
       'skip'
     ));
 
@@ -127,19 +141,18 @@ async function autofillTimesheet(dryRun) {
     const TOKEN = getToken();
     if (!TOKEN) {
       log('⚠️ No valid token found. Reload the page and try again.', 'err');
-      return { logs, errors: 1 };
+      return result(1);
     }
     log('🔑 Token obtained from MSAL cache.', 'ok');
 
-    if (dryRun) {
+    if (mode === 'preview') {
       log('— Preview: nothing was saved. —', 'warn');
       DAYS.filter(d => d.enabled).forEach(d => {
         if (d.currentHours >= 8) { log(`↷ ${d.date} would be skipped (${d.currentHours}h)`, 'skip'); return; }
         if (d.currentHours > 0)  { log(`⚠️ ${d.date} partial (${d.currentHours}h): would be skipped`, 'warn'); return; }
-        const entries = d.holiday ? ENTRIES_HOLIDAY : ENTRIES_NORMAL;
-        entries.forEach(e => log(`→ ${d.date}: ${e.hours}h | ${e.group} | ${e.taskName}`));
+        entriesFor(d).forEach(e => log(`→ ${d.date}: ${e.hours}h | ${e.group} | ${e.taskName}`));
       });
-      return { logs, errors: 0 };
+      return result(0);
     }
 
     // ---- Saving ----
@@ -181,10 +194,9 @@ async function autofillTimesheet(dryRun) {
         continue;
       }
 
-      const job     = day.holiday ? JOB_HOLIDAY     : JOB_NORMAL;
-      const entries = day.holiday ? ENTRIES_HOLIDAY : ENTRIES_NORMAL;
+      const job = day.holiday ? JOB_HOLIDAY : JOB_NORMAL;
 
-      for (const entry of entries) {
+      for (const entry of entriesFor(day)) {
         try {
           const r = await saveEntry(day, job, entry);
           if (r.ok) {
@@ -192,7 +204,7 @@ async function autofillTimesheet(dryRun) {
           } else {
             errors++;
             log(`✖ ${day.date} → HTTP ${r.status} ${JSON.stringify(r.data || {})}`, 'err');
-            if (r.status === 401) { log('Token expired. Reload the page.', 'err'); return { logs, errors }; }
+            if (r.status === 401) { log('Token expired. Reload the page.', 'err'); return result(errors); }
           }
         } catch (err) {
           errors++;
@@ -205,7 +217,7 @@ async function autofillTimesheet(dryRun) {
     log(errors === 0
       ? '✔ Done. Reload the page and verify before submitting.'
       : `⚠ Finished with ${errors} error(s).`, errors === 0 ? 'ok' : 'warn');
-    return { logs, errors };
+    return result(errors);
   }
 
   // ===== Popup UI =====
@@ -221,37 +233,88 @@ async function autofillTimesheet(dryRun) {
     $log.scrollTop = $log.scrollHeight;
   };
 
-  const run = async dryRun => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.url?.includes('roar.marcel.ai')) {
-      render([{ msg: 'Open the timesheet page first (roar.marcel.ai).', type: 'err' }]);
-      return;
-    }
-    document.querySelectorAll('button').forEach(b => b.disabled = true);
-    render([{ msg: dryRun ? 'Analyzing week…' : 'Saving entries…', type: 'warn' }]);
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: tab.id, allFrames: true },
-        world: 'MAIN',
-        func: autofillTimesheet,
-        args: [dryRun],
+  // Days picked as "2h meeting", persisted per week so they survive the popup closing
+  const $days = document.getElementById('days');
+  let meetings = new Set();
+  let storageKey = null;
+
+  const saveMeetings = () => {
+    if (storageKey) chrome.storage?.session?.set({ [storageKey]: [...meetings] }).catch(() => {});
+  };
+
+  const renderDays = days => {
+    $days.innerHTML = '';
+    days.filter(d => d.enabled).forEach(d => {
+      const chip = document.createElement('button');
+      chip.textContent = new Date(d.date + 'T00:00')
+        .toLocaleDateString('en-US', { weekday: 'short', day: '2-digit' });
+      chip.className = 'day' + (meetings.has(d.date) ? ' on' : '');
+      chip.disabled = d.holiday || d.currentHours > 0;
+      chip.title = d.holiday ? 'Holiday' : d.currentHours > 0 ? `Already has ${d.currentHours}h` : 'Toggle 2h meeting';
+      chip.addEventListener('click', () => {
+        meetings.has(d.date) ? meetings.delete(d.date) : meetings.add(d.date);
+        saveMeetings();
+        renderDays(days);
       });
-      const allResults = results.map(r => r.result).filter(Boolean);
-      const best = allResults.find(r => r.logs.some(l => l.msg.includes('Detected week')));
-      const all = best ? best.logs : allResults.flatMap((r, i) => [
-        { msg: `--- frame ${i} ---`, type: 'warn' },
-        ...r.logs,
-      ]);
-      render(all);
+      $days.appendChild(chip);
+    });
+  };
+
+  const getRoarTab = async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.url?.includes('roar.marcel.ai')) return tab;
+    render([{ msg: 'Open the timesheet page first (roar.marcel.ai).', type: 'err' }]);
+    return null;
+  };
+
+  // Returns the result of the frame that holds the grid, or every frame's logs if none does
+  const inject = async (tab, mode) => {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      world: 'MAIN',
+      func: autofillTimesheet,
+      args: [mode, [...meetings]],
+    });
+    const allResults = results.map(r => r.result).filter(Boolean);
+    return allResults.find(r => r.days) || {
+      logs: allResults.flatMap((r, i) => [{ msg: `--- frame ${i} ---`, type: 'warn' }, ...r.logs]),
+    };
+  };
+
+  const detectWeek = async () => {
+    const tab = await getRoarTab();
+    if (!tab) return;
+    try {
+      const { days, logs } = await inject(tab, 'detect');
+      if (!days) { render(logs); return; }
+      storageKey = 'meetings:' + days[0].date;
+      // Remembering the selection is a nice-to-have: never let storage block the chips
+      const stored = await chrome.storage?.session?.get(storageKey).catch(() => null);
+      meetings = new Set(stored?.[storageKey] || []);
+      renderDays(days);
     } catch (e) {
-      render([{ msg: 'Error injecting script: ' + e.message, type: 'err' }]);
-    } finally {
-      document.querySelectorAll('button').forEach(b => b.disabled = false);
+      render([{ msg: 'Error detecting the week: ' + e.message, type: 'err' }]);
     }
   };
 
-  document.getElementById('preview').addEventListener('click', () => run(true));
-  document.getElementById('run').addEventListener('click', () => run(false));
+  const run = async mode => {
+    const tab = await getRoarTab();
+    if (!tab) return;
+    const $actions = document.querySelectorAll('#actions button');
+    $actions.forEach(b => b.disabled = true);
+    render([{ msg: mode === 'preview' ? 'Analyzing week…' : 'Saving entries…', type: 'warn' }]);
+    try {
+      render((await inject(tab, mode)).logs);
+    } catch (e) {
+      render([{ msg: 'Error injecting script: ' + e.message, type: 'err' }]);
+    } finally {
+      $actions.forEach(b => b.disabled = false);
+    }
+  };
+
+  detectWeek();
+  document.getElementById('preview').addEventListener('click', () => run('preview'));
+  document.getElementById('run').addEventListener('click', () => run('run'));
   document.getElementById('reload').addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     chrome.tabs.reload(tab.id);

@@ -12,14 +12,23 @@
     #log { margin-top: 10px; padding: 8px; background: #111; color: #ddd; border-radius: 6px;
            font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.5;
            max-height: 320px; overflow: auto; white-space: pre-wrap; }
+    .hint { font-size: 12px; color: #666; margin: 0 0 6px; }
+    #days { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    #days:empty, .hint:has(+ #days:empty) { display: none; }
+    button.day { margin: 0; padding: 6px 10px; }
+    button.day.on { background: #f0c674; border-color: #d4a72c; font-weight: 600; }
     .ok { color: #7ee787; } .err { color: #ff7b72; } .warn { color: #f0c674; } .skip { color: #9aa0a6; }
   </style>
 </head>
 <body>
   <h1>rOar Filler</h1>
-  <button id="preview">Preview</button>
-  <button id="run" class="primary">Fill week</button>
-  <button id="reload">Reload page</button>
+  <p class="hint">Days with 2h of meetings (instead of 1h):</p>
+  <div id="days"></div>
+  <div id="actions">
+    <button id="preview">Preview</button>
+    <button id="run" class="primary">Fill week</button>
+    <button id="reload">Reload page</button>
+  </div>
   <div id="log">Ready. Use "Preview" to see the detected week without saving anything.</div>
   <script src="index.js"></script>
 </body>
