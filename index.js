@@ -34,7 +34,7 @@ async function autofillTimesheet(dryRun) {
 
     // ---- Week read from the DOM ----
     const rowByCode = code => {
-      const span = [...document.querySelectorAll('main .grid-row span')]
+      const span = [...document.querySelectorAll('.grid-row span')]
         .find(s => s.textContent.trim() === code);
       if (!span) throw new Error('Could not find the row for code ' + code);
       return span.closest('.grid-row');
@@ -63,7 +63,11 @@ async function autofillTimesheet(dryRun) {
 
       const normalInputs = [...normalRow.querySelectorAll('input[type="text"]')]
         .filter(i => /^\d{4}-\d{2}-\d{2}-/.test(i.id));
-      const dayCells = [...document.querySelectorAll('nav .grid-row .grid-row__cell')].slice(1, 8);
+      // Header = first grid row with no hour inputs that isn't the totals/submit footer
+      // (don't anchor to <main>/<nav>: rOar has dropped those wrappers before).
+      const headerRow = [...document.querySelectorAll('.grid-row')]
+        .find(r => !r.closest('footer') && !r.querySelector('input[type="text"]'));
+      const dayCells = [...(headerRow?.querySelectorAll('.grid-row__cell') || [])].slice(1, 8);
 
       // The Holiday job is only needed that week if there's an actual holiday —
       // otherwise the user never adds it and this shouldn't require that row.
